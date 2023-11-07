@@ -1,8 +1,10 @@
 //! Declaration of the Storage Keys
 use soroban_sdk::{contracttype, Address, Map, Vec};
 
-pub(crate) const SHARED_BUMP_AMOUNT: u32 = 69120; // 4 days
-pub(crate) const BALANCE_BUMP_AMOUNT: u32 = 518400; // 30 days
+pub(crate) const INSTANCE_BUMP_THRESHOLD: u32 = 34560; // 2 days
+pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 69120; // 4 days
+pub(crate) const BALANCE_BUMP_THRESHOLD: u32 = 518400; // 30 days
+pub(crate) const BALANCE_BUMP_AMOUNT: u32 = 535670; // 45 days
 
 // Token Details Struct
 #[contracttype]

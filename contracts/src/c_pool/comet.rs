@@ -2,11 +2,11 @@
 use super::{
     admin::{check_admin, has_administrator, write_administrator},
     allowance::{read_allowance, spend_allowance, write_allowance},
-    balance::{is_authorized, read_balance, receive_balance, spend_balance, write_authorization},
+    balance::{read_balance, receive_balance, spend_balance},
     metadata::{read_decimal, read_name, read_symbol},
 };
 use super::event;
-use soroban_token_sdk::TokenMetadata;
+use soroban_token_sdk::metadata::TokenMetadata;
 use crate::c_pool::metadata::write_metadata;
 use crate::c_pool::admin::read_administrator;
 use super::{
@@ -15,7 +15,7 @@ use super::{
         read_record, read_swap_fee, read_tokens, read_total_weight, write_record, write_tokens,
         write_total_weight,
     },
-    storage_types::{DataKey, Record, BALANCE_BUMP_AMOUNT, SHARED_BUMP_AMOUNT},
+    storage_types::{DataKey, Record, BALANCE_BUMP_AMOUNT, BALANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT, INSTANCE_BUMP_THRESHOLD},
     token_utility::{self, check_nonnegative_amount},
 };
 
@@ -67,10 +67,6 @@ pub trait CometPoolTrait {
 
     fn balance(e: Env, id: Address) -> i128;
 
-    fn spendable_balance(e: Env, id: Address) -> i128;
-
-    fn authorized(e: Env, id: Address) -> bool;
-
     fn transfer(e: Env, from: Address, to: Address, amount: i128);
 
     fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128);
@@ -78,10 +74,6 @@ pub trait CometPoolTrait {
     fn burn(e: Env, from: Address, amount: i128);
 
     fn burn_from(e: Env, spender: Address, from: Address, amount: i128);
-
-    fn clawback(e: Env, from: Address, amount: i128);
-
-    fn set_authorized(e: Env, id: Address, authorize: bool);
 
     fn mint(e: Env, to: Address, amount: i128);
 
@@ -92,42 +84,6 @@ pub trait CometPoolTrait {
     fn name(e: Env) -> String;
 
     fn symbol(e: Env) -> String;
-    
-    // fn initialize(e: Env, admin: Address, decimal: u32, name: String, symbol: String);
-
-    // fn allowance(e: Env, from: Address, spender: Address) -> i128;
-
-    // fn incr_allow(e: Env, from: Address, spender: Address, amount: i128);
-
-    // fn decr_allow(e: Env, from: Address, spender: Address, amount: i128);
-
-    // fn balance(e: Env, id: Address) -> i128;
-
-    // fn spendable(e: Env, id: Address) -> i128;
-
-    // fn authorized(e: Env, id: Address) -> bool;
-
-    // fn transfer(e: Env, from: Address, to: Address, amount: i128);
-
-    // fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128);
-
-    // fn burn(e: Env, from: Address, amount: i128);
-
-    // fn burn_from(e: Env, spender: Address, from: Address, amount: i128);
-
-    // fn clawback(e: Env, admin: Address, from: Address, amount: i128);
-
-    // fn set_auth(e: Env, admin: Address, id: Address, authorize: bool);
-
-    // fn mint(e: Env, admin: Address, to: Address, amount: i128);
-
-    // fn set_admin(e: Env, admin: Address, new_admin: Address);
-
-    // fn decimals(e: Env) -> u32;
-
-    // fn name(e: Env) -> String;
-
-    // fn symbol(e: Env) -> String;
 
     fn get_total_supply(e: Env) -> i128;
 
@@ -288,10 +244,11 @@ impl CometPoolTrait for CometPoolContract {
     fn bundle_bind(e: Env, token: Vec<Address>, balance: Vec<i128>, denorm: Vec<i128>) {
         // token::Client::approve()
         let controller: Address = read_controller(&e).clone();
+        controller.require_auth();
 
         for i in 0..token.len() {
             // Client::new(e, token)
-            token::Client::new(&e, &token.get(i).unwrap_optimized()).approve(&(controller.clone()), &e.current_contract_address(), &balance.get(i).unwrap_optimized(), &1000);
+            // token::Client::new(&e, &token.get(i).unwrap_optimized()).approve(&(controller.clone()), &e.current_contract_address(), &balance.get(i).unwrap_optimized(), &1000);
             Self::bind(e.clone(), token.get(i).unwrap_optimized(), balance.get(i).unwrap_optimized(), denorm.get(i).unwrap_optimized(), controller.clone() );
         }
     }
@@ -468,7 +425,7 @@ impl CometPoolTrait for CometPoolContract {
     // Absorbing tokens into the pool directly sent to the current contract
     fn gulp(e: Env, t: Address) {
         assert_with_error!(&e, check_record_bound(&e, t.clone()), Error::ErrNotBound);
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         let mut records = read_record(&e);
 
         let mut rec = records.get(t.clone()).unwrap_optimized();
@@ -487,7 +444,7 @@ impl CometPoolTrait for CometPoolContract {
 
         user.require_auth();
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         let pool_total = get_total_shares(&e);
         let ratio = c_add(&e, c_div(&e, pool_amount_out, pool_total).unwrap_optimized(), 1).unwrap_optimized();
 
@@ -533,7 +490,7 @@ impl CometPoolTrait for CometPoolContract {
     fn exit_pool(e: Env, pool_amount_in: i128, min_amounts_out: Vec<i128>, user: Address) {
         assert_with_error!(&e, pool_amount_in >= 0, Error::ErrNegative);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         user.require_auth();
         assert_with_error!(&e, read_finalize(&e), Error::ErrNotFinalized);
         let pool_total = get_total_shares(&e);
@@ -606,7 +563,7 @@ impl CometPoolTrait for CometPoolContract {
             Error::ErrNotBound
         );
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         user.require_auth();
         let mut in_record = read_record(&e).get(token_in.clone()).unwrap_optimized();
@@ -712,7 +669,7 @@ impl CometPoolTrait for CometPoolContract {
         );
         assert_with_error!(&e, read_public_swap(&e), Error::ErrSwapNotPublic);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         user.require_auth();
         let mut in_record = read_record(&e).get(token_in.clone()).unwrap_optimized();
@@ -825,7 +782,7 @@ impl CometPoolTrait for CometPoolContract {
             Error::ErrMaxInRatio
         );
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         let mut in_record = read_record(&e).get(token_in.clone()).unwrap_optimized();
         let pool_amount_out = calc_lp_token_amount_given_token_deposits_in(
@@ -882,7 +839,7 @@ impl CometPoolTrait for CometPoolContract {
             Error::ErrNotBound
         );
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         let mut in_record: Record = read_record(&e).get(token_in.clone()).unwrap_optimized();
 
@@ -952,7 +909,7 @@ impl CometPoolTrait for CometPoolContract {
             Error::ErrNotBound
         );
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         let mut out_record: Record = read_record(&e).get(token_out.clone()).unwrap_optimized();
 
@@ -1037,7 +994,7 @@ impl CometPoolTrait for CometPoolContract {
             Error::ErrMaxOutRatio
         );
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         let mut out_record: Record = read_record(&e).get(token_out.clone()).unwrap_optimized();
         let pool_amount_in = calc_lp_token_amount_given_token_withdrawal_amount(
@@ -1239,7 +1196,7 @@ impl CometPoolTrait for CometPoolContract {
     }
 
     fn allowance(e: Env, from: Address, spender: Address) -> i128 {
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         read_allowance(&e, from, spender).amount
     }
 
@@ -1248,25 +1205,15 @@ impl CometPoolTrait for CometPoolContract {
 
         check_nonnegative_amount(amount);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         write_allowance(&e, from.clone(), spender.clone(), amount, expiration_ledger);
         event::approve(&e, from, spender, amount, expiration_ledger);
     }
 
     fn balance(e: Env, id: Address) -> i128 {
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         read_balance(&e, id)
-    }
-
-    fn spendable_balance(e: Env, id: Address) -> i128 {
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
-        read_balance(&e, id)
-    }
-
-    fn authorized(e: Env, id: Address) -> bool {
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
-        is_authorized(&e, id)
     }
 
     fn transfer(e: Env, from: Address, to: Address, amount: i128) {
@@ -1274,7 +1221,7 @@ impl CometPoolTrait for CometPoolContract {
 
         check_nonnegative_amount(amount);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         spend_balance(&e, from.clone(), amount);
         receive_balance(&e, to.clone(), amount);
@@ -1286,7 +1233,7 @@ impl CometPoolTrait for CometPoolContract {
 
         check_nonnegative_amount(amount);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         spend_allowance(&e, from.clone(), spender, amount);
         spend_balance(&e, from.clone(), amount);
@@ -1299,7 +1246,7 @@ impl CometPoolTrait for CometPoolContract {
 
         check_nonnegative_amount(amount);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         spend_balance(&e, from.clone(), amount);
         event::burn(&e, from, amount);
@@ -1310,32 +1257,11 @@ impl CometPoolTrait for CometPoolContract {
 
         check_nonnegative_amount(amount);
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         spend_allowance(&e, from.clone(), spender, amount);
         spend_balance(&e, from.clone(), amount);
         event::burn(&e, from, amount)
-    }
-
-    fn clawback(e: Env, from: Address, amount: i128) {
-        check_nonnegative_amount(amount);
-        let admin = read_administrator(&e);
-        admin.require_auth();
-
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
-
-        spend_balance(&e, from.clone(), amount);
-        event::clawback(&e, admin, from, amount);
-    }
-
-    fn set_authorized(e: Env, id: Address, authorize: bool) {
-        let admin = read_administrator(&e);
-        admin.require_auth();
-
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
-
-        write_authorization(&e, id.clone(), authorize);
-        event::set_authorized(&e, admin, id, authorize);
     }
 
     fn mint(e: Env, to: Address, amount: i128) {
@@ -1343,7 +1269,7 @@ impl CometPoolTrait for CometPoolContract {
         let admin = read_administrator(&e);
         admin.require_auth();
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         receive_balance(&e, to.clone(), amount);
         event::mint(&e, admin, to, amount);
@@ -1353,7 +1279,7 @@ impl CometPoolTrait for CometPoolContract {
         let admin = read_administrator(&e);
         admin.require_auth();
 
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         write_administrator(&e, &new_admin);
         event::set_admin(&e, admin, new_admin);

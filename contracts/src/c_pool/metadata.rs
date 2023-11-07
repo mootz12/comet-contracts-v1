@@ -2,15 +2,15 @@
 
 use crate::c_pool::storage_types::DataKey;
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Map, Vec, unwrap::UnwrapOptimized, String};
-use soroban_token_sdk::{TokenUtils, TokenMetadata};
+use soroban_token_sdk::{TokenUtils, metadata::TokenMetadata};
 
-use super::storage_types::{DataKeyToken, Record, SHARED_BUMP_AMOUNT};
+use super::storage_types::{DataKeyToken, Record, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT};
 
 // Read all Token Addresses in the pool
 pub fn read_tokens(e: &Env) -> Vec<Address> {
     let key = DataKey::AllTokenVec;
     if let Some(arr) = e.storage().persistent().get::<DataKey, Vec<Address>>(&key) {
-        e.storage().persistent().bump(&key, SHARED_BUMP_AMOUNT);
+        e.storage().persistent().bump(&key, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         arr
     } else {
         vec![e]
@@ -21,14 +21,14 @@ pub fn read_tokens(e: &Env) -> Vec<Address> {
 pub fn write_tokens(e: &Env, new: Vec<Address>) {
     let key = DataKey::AllTokenVec;
     e.storage().persistent().set(&key, &new);
-    e.storage().persistent().bump(&key, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&key, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // Read Record
 pub fn read_record(e: &Env) -> Map<Address, Record> {
     let key_rec = DataKey::AllRecordData;
     if let Some(rec) = e.storage().persistent().get::<DataKey, Map<Address, Record>>(&key_rec) {
-        e.storage().persistent().bump(&key_rec, SHARED_BUMP_AMOUNT);
+        e.storage().persistent().bump(&key_rec, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         rec
     } else {
         Map::<Address, Record>::new(e)
@@ -39,7 +39,7 @@ pub fn read_record(e: &Env) -> Map<Address, Record> {
 pub fn write_record(e: &Env, new_map: Map<Address, Record>) {
     let key_rec = DataKey::AllRecordData;
     e.storage().persistent().set(&key_rec, &new_map);
-    e.storage().persistent().bump(&key_rec, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&key_rec, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // Read Factory
@@ -59,7 +59,7 @@ pub fn write_factory(e: &Env, d: Address) {
 // Read Controller
 pub fn read_controller(e: &Env) -> Address {
     let key = DataKey::Controller;
-    e.storage().persistent().bump(&key, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&key, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     e.storage().persistent().get::<DataKey, Address>(&key).unwrap_optimized()
 }
 
@@ -67,7 +67,7 @@ pub fn read_controller(e: &Env) -> Address {
 pub fn write_controller(e: &Env, d: Address) {
     let key = DataKey::Controller;
     e.storage().persistent().set(&key, &d);
-    e.storage().persistent().bump(&key, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&key, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // Read Swap Fee
@@ -100,26 +100,26 @@ pub fn write_total_weight(e: &Env, d: i128) {
 
 //Read Token Share
 pub fn get_token_share(e: &Env) -> Address {
-    e.storage().persistent().bump(&DataKey::TokenShare, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&DataKey::TokenShare, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     e.storage().persistent().get::<DataKey, Address>(&DataKey::TokenShare).unwrap_optimized()
 }
 
 // Update Token Share
 pub fn put_token_share(e: &Env, contract_id: Address) {
     e.storage().persistent().set(&DataKey::TokenShare, &contract_id);
-    e.storage().persistent().bump(&DataKey::TokenShare, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&DataKey::TokenShare, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // Read Total Shares
 pub fn get_total_shares(e: &Env) -> i128 {
-    e.storage().persistent().bump(&DataKey::TotalShares, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&DataKey::TotalShares, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     e.storage().persistent().get::<DataKey, i128>(&DataKey::TotalShares).unwrap_optimized()
 }
 
 // Update Total Shares
 pub fn put_total_shares(e: &Env, amount: i128) {
     e.storage().persistent().set(&DataKey::TotalShares, &amount);
-    e.storage().persistent().bump(&DataKey::TotalShares, SHARED_BUMP_AMOUNT);
+    e.storage().persistent().bump(&DataKey::TotalShares, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 }
 
 // Read Finalize
@@ -147,7 +147,7 @@ pub fn check_record_bound(e: &Env, token: Address) -> bool {
     let key_rec = DataKey::AllRecordData;
 
     if let Some(val) = e.storage().persistent().get::<DataKey, Map<Address, Record>>(&key_rec) {
-        e.storage().persistent().bump(&key_rec, SHARED_BUMP_AMOUNT);
+        e.storage().persistent().bump(&key_rec, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         let key_existence = val.contains_key(token.clone());
         if key_existence {
             return val.get(token).unwrap_optimized().bound
@@ -171,20 +171,20 @@ pub fn write_freeze(e: &Env, d: bool) {
 
 pub fn read_decimal(e: &Env) -> u32 {
     let util = TokenUtils::new(e);
-    util.get_metadata().decimal
+    util.metadata().get_metadata().decimal
 }
 
 pub fn read_name(e: &Env) -> String {
     let util = TokenUtils::new(e);
-    util.get_metadata().name
+    util.metadata().get_metadata().name
 }
 
 pub fn read_symbol(e: &Env) -> String {
     let util = TokenUtils::new(e);
-    util.get_metadata().symbol
+    util.metadata().get_metadata().symbol
 }
 
 pub fn write_metadata(e: &Env, metadata: TokenMetadata) {
     let util = TokenUtils::new(e);
-    util.set_metadata(&metadata);
+    util.metadata().set_metadata(&metadata);
 }

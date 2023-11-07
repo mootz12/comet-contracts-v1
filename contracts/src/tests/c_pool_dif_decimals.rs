@@ -59,7 +59,7 @@ fn to_six_dec<T: Into<f64>>(a: T) -> i128 {
 #[test]
 fn test_pool_functions_different_decimals() {
     let env: Env = Env::default();
-    env.mock_all_auths();
+    env.mock_all_auths_allowing_non_root_auth();
     let admin = soroban_sdk::Address::random(&env);
     let user1 = soroban_sdk::Address::random(&env);
     let user2 = soroban_sdk::Address::random(&env);

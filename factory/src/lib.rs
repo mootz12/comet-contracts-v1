@@ -6,8 +6,10 @@ use soroban_sdk::{contractimpl, contracttype, Address, Bytes, BytesN, Env, Symbo
 pub mod error;
 use crate::error::Error;
 
-pub(crate) const SHARED_BUMP_AMOUNT: u32 = 69120; // 4 days
-pub(crate) const LARGE_BUMP_AMOUNT: u32 = 518400; // 30 days
+pub(crate) const INSTANCE_BUMP_THRESHOLD: u32 = 34560; // 2 days
+pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 69120; // 4 days
+pub(crate) const LARGE_BUMP_THRESHOLD: u32 = 518400; // 30 days
+pub(crate) const LARGE_BUMP_AMOUNT: u32 = 777600; // 45 days
 
 // Keys which will give access to the corresponding data
 #[derive(Clone)]
@@ -53,7 +55,7 @@ impl Factory {
     // Create a new Comet Pool
     pub fn new_c_pool(e: Env, salt: BytesN<32>, user: Address) -> Address {
         user.require_auth();
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         // let mut salt = Bytes::new(&e);
         // let salt = e.crypto().sha256(&salt);
@@ -77,7 +79,7 @@ impl Factory {
 
         let key = DataKeyFactory::IsCpool(id.clone());
         e.storage().persistent().set(&key, &true);
-        e.storage().persistent().bump(&key, LARGE_BUMP_AMOUNT);
+        e.storage().persistent().bump(&key, INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         let event: NewPoolEvent = NewPoolEvent {
             caller: user,
             pool: id.clone(),
@@ -98,7 +100,7 @@ impl Factory {
             Error::ErrNotController
         );
         caller.require_auth();
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
         e.storage().instance().set(&DataKeyFactory::Admin, &user);
         let event: SetAdminEvent = SetAdminEvent {
             caller,
@@ -117,7 +119,7 @@ impl Factory {
     pub fn is_c_pool(e: Env, addr: Address) -> bool {
         let key = DataKeyFactory::IsCpool(addr);
         if let Some(is_cpool) = e.storage().persistent().get::<DataKeyFactory, bool>(&key) {
-            e.storage().persistent().bump(&key, LARGE_BUMP_AMOUNT);
+            e.storage().persistent().bump(&key, LARGE_BUMP_THRESHOLD, LARGE_BUMP_AMOUNT);
             is_cpool
         } else {
             false
@@ -139,7 +141,7 @@ impl Factory {
             Error::ErrNotCPool
         );
         caller.require_auth();
-        e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+        e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
         let curr =  &e.current_contract_address().clone();
         let init_args: Vec<Val> = (

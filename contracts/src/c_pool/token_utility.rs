@@ -7,20 +7,20 @@ use super::{
     balance::{receive_balance, spend_balance},
     comet::{self, CometPoolContract, CometPoolTrait},
     event::{burn, transfer},
-    metadata::{get_token_share, get_total_shares, put_total_shares}, storage_types::SHARED_BUMP_AMOUNT,
+    metadata::{get_token_share, get_total_shares, put_total_shares}, storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_BUMP_THRESHOLD},
 };
 
 use soroban_sdk::token::Client;
 
 // Transfers the Specific Token from the User’s Address to the Contract’s Address
 pub fn pull_underlying(e: &Env, token: &Address, from: Address, amount: i128) {
-    // Client::new(e, token).transfer_from(
-    //     &e.current_contract_address(),
-    //     &from,
-    //     &e.current_contract_address(),
-    //     &amount,
-    // );
-    Client::new(e, token).transfer(&from, &e.current_contract_address(), &amount)
+    Client::new(e, token).transfer_from(
+        &e.current_contract_address(),
+        &from,
+        &e.current_contract_address(),
+        &amount,
+    );
+    // Client::new(e, token).transfer(&from, &e.current_contract_address(), &amount)
 }
 
 // Transfers the Specific Token from the Contract’s Address to the given 'to' Address
@@ -35,7 +35,7 @@ pub fn mint_shares(e: Env, to: Address, amount: i128) {
     let contract_address = e.current_contract_address();
     // CometPoolContract::mint(e, to, amount);
     check_nonnegative_amount(amount);
-    e.storage().instance().bump(SHARED_BUMP_AMOUNT);
+    e.storage().instance().bump(INSTANCE_BUMP_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     receive_balance(&e, to.clone(), amount);
     // event::mint(&e, admin, to, amount);
 

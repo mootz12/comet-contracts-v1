@@ -8,7 +8,7 @@ use crate::c_pool::comet::CometPoolContract;
 use crate::c_pool::comet::CometPoolContractClient;
 use soroban_sdk::String;
 use soroban_sdk::token;
-use soroban_sdk::token::AdminClient;
+use soroban_sdk::token::Client;
 use soroban_sdk::xdr::AccountId;
 use soroban_sdk::Bytes;
 use soroban_sdk::{vec, BytesN, Env, Symbol};
@@ -18,7 +18,7 @@ use soroban_sdk::{testutils::Address as _, Address, IntoVal};
 struct Clients {
     core: CometPoolContractClient<'static>,
     native_asset: token::Client<'static>,
-    native_asset_admin: token::AdminClient<'static>,
+    native_asset_admin: token::Client<'static>,
 }
 
 
@@ -64,7 +64,7 @@ fn to_stroop<T: Into<f64>>(a: T) -> i128 {
 #[test]
 fn test_pool_functions_dep_wdr() {
     let env = Env::default();
-    env.mock_all_auths();
+    env.mock_all_auths_allowing_non_root_auth();
     let admin = soroban_sdk::Address::random(&env);
     let user1 = soroban_sdk::Address::random(&env);
     let user2 = soroban_sdk::Address::random(&env);

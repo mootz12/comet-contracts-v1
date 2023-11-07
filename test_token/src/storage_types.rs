@@ -1,7 +1,9 @@
 use soroban_sdk::{contracttype, Address};
 
-pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 34560; // 2 days
-pub(crate) const BALANCE_BUMP_AMOUNT: u32 = 518400; // 30 days
+pub(crate) const INSTANCE_BUMP_THRESHOLD: u32 = 34560; // 2 days
+pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 69120; // 4 days
+pub(crate) const BALANCE_BUMP_THRESHOLD: u32 = 518400; // 30 days
+pub(crate) const BALANCE_BUMP_AMOUNT: u32 = 777600; // 45 days
 
 #[derive(Clone)]
 #[contracttype]
