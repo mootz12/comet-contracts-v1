@@ -1,0 +1,42 @@
+[package]
+name = "comet-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+soroban-fixed-point-math = "1.0.0"
+soroban-sdk.version = "20.5.0"
+soroban-sdk.features = ["testutils"]
+extension-trait = "1"
+sep-41-token = { version = "1.0.0", features = ["testutils"]}
+
+
+[dependencies.contracts]
+path = "../contracts"
+features = ["testutils"]
+
+[dependencies.factory]
+path = "../factory"
+features = ["testutils"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[lib]
+name = "fuzz_common"
+path = "lib.rs"
+
+[[bin]]
+name = "fuzz_pool_swap"
+path = "fuzz_targets/fuzz_pool_swap.rs"
+test = false
+doc = false
