@@ -1,10 +1,10 @@
 #![cfg(test)]
 
+use core::assert_eq;
+
 use sep_41_token::testutils::MockTokenClient;
 use soroban_sdk::{
-    symbol_short,
-    testutils::{Address as _, Events as _},
-    vec, Address, Env, Symbol, TryFromVal, Vec,
+    Address, Env, Event, Vec, contractevent, testutils::{Address as _, Events as _}, vec,
 };
 
 use crate::{
@@ -13,24 +13,28 @@ use crate::{
     tests::utils::{create_comet_pool, create_stellar_token},
 };
 
+#[contractevent(data_format = "single-value")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Mint {
+    #[topic]
+    pub pool: Address,
+    #[topic]
+    pub to: Address,
+    pub amount: i128,
+}
+
 fn assert_last_mint_event(e: &Env, pool: &Address, to: &Address, amount: i128) {
     let events = e.events().all();
-    let (contract, topics, data) = events.last().unwrap();
-    assert_eq!(contract, pool.clone());
-    assert_eq!(topics.len(), 3);
+    let xdr_event = events.events().last().unwrap();
     assert_eq!(
-        Symbol::try_from_val(e, &topics.get_unchecked(0)).unwrap(),
-        symbol_short!("mint")
+        Mint {
+            pool: pool.clone(),
+            to: to.clone(),
+            amount: amount,
+        }
+        .to_xdr(e, pool), 
+        *xdr_event
     );
-    assert_eq!(
-        Address::try_from_val(e, &topics.get_unchecked(1)).unwrap(),
-        pool.clone()
-    );
-    assert_eq!(
-        Address::try_from_val(e, &topics.get_unchecked(2)).unwrap(),
-        to.clone()
-    );
-    assert_eq!(i128::try_from_val(e, &data).unwrap(), amount);
 }
 
 #[test]
