@@ -163,8 +163,6 @@ fn test_pool_functions() {
         "Token Balance 1 of Contract = {}",
         token1.balance(&contract_id)
     );
-    token1.mint(&contract_id, &to_stroop(100));
-    client.gulp(&token1.address);
 
     // let logs = env.logger().all();
     // std::println!("{}", logs.join("\n"));

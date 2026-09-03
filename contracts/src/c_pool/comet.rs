@@ -48,14 +48,6 @@ impl CometPoolContract {
         execute_init(&e, controller, tokens, weights, balances, swap_fee);
     }
 
-    // Absorbing tokens into the pool directly sent to the current contract
-    pub fn gulp(e: Env, t: Address) {
-        e.storage()
-            .instance()
-            .extend_ttl(SHARED_LIFETIME_THRESHOLD, SHARED_BUMP_AMOUNT);
-        execute_gulp(e, t);
-    }
-
     // Helps a users join the pool
     pub fn join_pool(e: Env, pool_amount_out: i128, max_amounts_in: Vec<i128>, user: Address) {
         user.require_auth();
