@@ -4,7 +4,7 @@ on:
     tags:
       - 'v*'  # triggered whenever a new tag (previxed with "v") is pushed to the repository
 jobs:
-  release-contract-governor:
+  release-contract-factory:
     uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
     with:
       release_name: ${{ github.ref_name }}
@@ -13,7 +13,7 @@ jobs:
     secrets:
       release_token: ${{ secrets.GITHUB_TOKEN }}
 
-  release-contract-votes:
+  release-contract-pool:
     uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
     with:
       release_name: ${{ github.ref_name }}

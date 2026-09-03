@@ -7,7 +7,7 @@ use soroban_sdk::{testutils::Address as _, token::StellarAssetClient, vec, Addre
 
 // The contract that will be deployed by the deployer contract.
 mod contract {
-    soroban_sdk::contractimport!(file = "../target/wasm32-unknown-unknown/optimized/comet.wasm");
+    soroban_sdk::contractimport!(file = "../target/wasm32v1-none/optimized/comet.wasm");
 }
 
 #[test]

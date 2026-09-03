@@ -25,7 +25,7 @@ pub fn pull_underlying(e: &Env, token: &Address, from: &Address, amount: i128, m
 
 // Transfers the Specific Token from the Contract’s Address to the given 'to' Address
 pub fn push_underlying(e: &Env, token: &Address, to: &Address, amount: i128) {
-    Client::new(e, token).transfer(&e.current_contract_address(), &to, &amount);
+    Client::new(e, token).transfer(&e.current_contract_address(), to, &amount);
 }
 
 // Mint the given amount of LP Tokens

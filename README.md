@@ -6,15 +6,25 @@ Smart Contracts explicitly written for Soroban.
 
 ### Without logs
 
-```cargo test```
+```sh
+cargo test
+```
 
 ### With logs
 
-```cargo test -- --nocapture```
+```sh
+cargo test -- --nocapture
+```
+
+## Tooling
+
+The Rust toolchain and `wasm32v1-none` target are pinned in `rust-toolchain.toml`.
 
 ## Create a WASM Release Build
 
-```cargo build --target wasm32-unknown-unknown --release```
+```sh
+stellar contract build
+```
 
 ## Best Practices Used
 

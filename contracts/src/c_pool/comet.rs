@@ -20,8 +20,8 @@ use crate::c_pool::{
     token_utility::check_nonnegative_amount,
 };
 use soroban_sdk::{
-    contract, contractimpl, token::TokenInterface, unwrap::UnwrapOptimized, Address, Env, String,
-    Vec,
+    contract, contractimpl, token::TokenInterface, unwrap::UnwrapOptimized, Address, Env,
+    MuxedAddress, String, Vec,
 };
 use soroban_token_sdk::TokenUtils;
 
@@ -301,7 +301,7 @@ impl TokenInterface for CometPoolContract {
         read_balance(&e, id)
     }
 
-    fn transfer(e: Env, from: Address, to: Address, amount: i128) {
+    fn transfer(e: Env, from: Address, to: MuxedAddress, amount: i128) {
         from.require_auth();
 
         check_nonnegative_amount(&e, amount);
@@ -310,9 +310,10 @@ impl TokenInterface for CometPoolContract {
             .instance()
             .extend_ttl(SHARED_LIFETIME_THRESHOLD, SHARED_BUMP_AMOUNT);
 
+        let to_addr = to.address();
         spend_balance(&e, from.clone(), amount);
-        receive_balance(&e, to.clone(), amount);
-        TokenUtils::new(&e).events().transfer(from, to, amount);
+        receive_balance(&e, to_addr.clone(), amount);
+        TokenUtils::new(&e).events().transfer(from, to_addr, amount);
     }
 
     fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128) {
