@@ -29,3 +29,13 @@ fn test_c_pow_high() {
         false,
     );
 }
+
+#[test]
+fn test_c_pow_integer_rounding_direction() {
+    let env = Env::default();
+    let base = I256::from_i128(&env, BONE + 1);
+    let exp = I256::from_i128(&env, 2 * BONE);
+
+    assert_eq!(c_pow(&env, &base, &exp, false).to_i128().unwrap(), BONE + 2);
+    assert_eq!(c_pow(&env, &base, &exp, true).to_i128().unwrap(), BONE + 3);
+}

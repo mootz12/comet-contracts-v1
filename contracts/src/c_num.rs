@@ -34,7 +34,12 @@ pub fn c_pow(e: &Env, base: &I256, exp: &I256, round_up: bool) -> I256 {
     let bone = I256::from_i128(e, BONE);
     let int = exp.div(&bone);
     let remain = exp.sub(&int.mul(&bone));
-    let whole_pow = c_powi(e, &base, &(int.to_i128().unwrap_optimized() as u32));
+    let whole_pow = c_powi(
+        e,
+        &base,
+        &(int.to_i128().unwrap_optimized() as u32),
+        round_up,
+    );
     if remain == I256::from_i128(e, 0) {
         return whole_pow;
     }
@@ -53,16 +58,24 @@ pub fn c_pow(e: &Env, base: &I256, exp: &I256, round_up: bool) -> I256 {
 }
 
 // Calculate a^n where n is an integer
-fn c_powi(e: &Env, a: &I256, n: &u32) -> I256 {
+fn c_powi(e: &Env, a: &I256, n: &u32, round_up: bool) -> I256 {
     let bone = I256::from_i128(e, BONE);
     let mut z = if n % 2 != 0 { a.clone() } else { bone.clone() };
 
     let mut a = a.clone();
     let mut n = n / 2;
     while n != 0 {
-        a = a.fixed_mul_floor(e, &a, &bone);
+        a = if round_up {
+            a.fixed_mul_ceil(e, &a, &bone)
+        } else {
+            a.fixed_mul_floor(e, &a, &bone)
+        };
         if n % 2 != 0 {
-            z = z.fixed_mul_floor(e, &a, &bone);
+            z = if round_up {
+                z.fixed_mul_ceil(e, &a, &bone)
+            } else {
+                z.fixed_mul_floor(e, &a, &bone)
+            };
         }
         n = n / 2
     }
@@ -83,7 +96,9 @@ fn c_pow_approx(e: &Env, base: &I256, exp: &I256, precision: &I256, round_up: bo
     // Max resource impact at 50 iterations:
     //  -> CPU: 5M inst
     //  -> Mem: 150 kB
+    let mut iters: i128 = 0;
     for i in 1..51 {
+        iters = i;
         let big_k = I256::from_i128(e, i * BONE);
         let c = exp.sub(&big_k.sub(&bone));
         term = term.fixed_mul_floor(e, &c.fixed_mul_floor(e, &x, &bone), &bone);
@@ -102,18 +117,24 @@ fn c_pow_approx(e: &Env, base: &I256, exp: &I256, precision: &I256, round_up: bo
     // the series has predicatable approximations bounds, so we can adjust the final sum by
     // the final term to (almost) ensure the sum is either an under or over estimate based
     // on the rounding direction.
-    if x > zero {
-        // series will oscillate due to negative `c` values and a starting positive value.
-        if term > zero && !round_up {
-            // the final applied term was additive - the current sum is likely an overestimate
-            sum = sum.sub(&term);
-        } else if term < zero && round_up {
-            // the final applied term was subtractive - the current sum is likely an understimate
-            sum = sum.sub(&term);
+    //
+    // Skip the adjustment if the series converged on the first term. In that case the final
+    // term is the entire first-order correction rather than a tail estimate, and the omitted
+    // tail is below one unit, so adjusting would double (or zero) the result.
+    if iters > 1 {
+        if x > zero {
+            // series will oscillate due to negative `c` values and a starting positive value.
+            if term > zero && !round_up {
+                // the final applied term was additive - the current sum is likely an overestimate
+                sum = sum.sub(&term);
+            } else if term < zero && round_up {
+                // the final applied term was subtractive - the current sum is likely an understimate
+                sum = sum.sub(&term);
+            }
+        } else if !round_up {
+            // series is monotonically decreasing, so the final term is an overestimate
+            sum = sum.add(&term);
         }
-    } else if !round_up {
-        // series is monotonically decreasing, so the final term is an overestimate
-        sum = sum.add(&term);
     }
     sum
 }

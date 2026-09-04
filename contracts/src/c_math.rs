@@ -55,7 +55,7 @@ pub fn calc_token_out_given_token_in(
 
     let adjusted_in = token_amount_in.fixed_mul_floor(&e, &fee_adjust_ratio, &bone);
 
-    let base = token_balance_in.fixed_div_floor(&e, &token_balance_in.add(&adjusted_in), &bone);
+    let base = token_balance_in.fixed_div_ceil(&e, &token_balance_in.add(&adjusted_in), &bone);
     let power = c_pow(e, &base, &weight_ratio, true);
     let balance_ratio = sub_no_negative(e, &bone, &power);
     let result = token_balance_out.fixed_mul_floor(&e, &balance_ratio, &bone);
@@ -156,7 +156,7 @@ pub fn calc_token_deposits_in_given_lp_token_amount(
     let pool_ratio = new_pool_supply.fixed_div_ceil(&e, &pool_supply, &bone);
 
     let boo = bone.fixed_div_ceil(e, &normalized_weight, &bone);
-    let token_in_ratio = c_pow(e, &pool_ratio, &boo, false);
+    let token_in_ratio = c_pow(e, &pool_ratio, &boo, true);
     let new_token_balance_in = token_balance_in.fixed_mul_ceil(&e, &token_in_ratio, &bone);
 
     let token_amount_in_after_fee = sub_no_negative(e, &new_token_balance_in, &token_balance_in);
@@ -190,10 +190,10 @@ pub fn calc_lp_token_amount_given_token_withdrawal_amount(
 
     let token_amount_out_before_fee = token_amount_out.fixed_div_ceil(&e, &bone.sub(&zar), &bone);
     let new_token_balance_out = token_balance_out.sub(&token_amount_out_before_fee);
-    let balance_ratio = new_token_balance_out.fixed_div_ceil(&e, &token_balance_out, &bone);
+    let balance_ratio = new_token_balance_out.fixed_div_floor(&e, &token_balance_out, &bone);
 
-    let pool_ratio = c_pow(e, &balance_ratio, &normalized_weight, true);
-    let new_pool_supply = pool_ratio.fixed_mul_ceil(&e, &pool_supply, &bone);
+    let pool_ratio = c_pow(e, &balance_ratio, &normalized_weight, false);
+    let new_pool_supply = pool_ratio.fixed_mul_floor(&e, &pool_supply, &bone);
     let result = sub_no_negative(&e, &pool_supply, &new_pool_supply);
 
     downscale_ceil(e, &result, STROOP_SCALAR)
@@ -219,11 +219,11 @@ pub fn calc_token_withdrawal_amount_given_lp_token_amount(
     let normalized_weight = upscale(e, out_record.weight, STROOP_SCALAR);
 
     let new_pool_supply = pool_supply.sub(&pool_amount_in);
-    let pool_ratio = new_pool_supply.fixed_div_floor(&e, &pool_supply, &bone);
+    let pool_ratio = new_pool_supply.fixed_div_ceil(&e, &pool_supply, &bone);
 
     let exp = bone.fixed_div_floor(e, &normalized_weight, &bone);
-    let token_out_ratio = c_pow(e, &pool_ratio, &exp, false);
-    let new_token_balance_out = token_balance_out.fixed_mul_floor(&e, &token_out_ratio, &bone);
+    let token_out_ratio = c_pow(e, &pool_ratio, &exp, true);
+    let new_token_balance_out = token_balance_out.fixed_mul_ceil(&e, &token_out_ratio, &bone);
 
     let token_amount_out_before_fee =
         sub_no_negative(e, &token_balance_out, &new_token_balance_out);
@@ -350,6 +350,250 @@ mod tests {
         let x = I256::from_i128(&env, i128::MAX);
         let too_large = x.mul(&I256::from_i128(&env, STROOP_SCALAR)).add(&x);
         downscale_ceil(&env, &too_large, STROOP_SCALAR);
+    }
+
+    // Exact values in the comments below were computed with Python `decimal` at 60 digits from
+    // the closed-form Balancer formulas, using the true 1/w (not the 18-decimal rounded exponent).
+    // Every result must land on the pool's side of the exact value:
+    //   token in / LP in  -> rounded up   (>= exact)
+    //   token out / LP out -> rounded down (<= exact)
+
+    #[test]
+    fn test_single_sided_rounding_high_token_per_share() {
+        let env = Env::default();
+        let swap_fee = 10;
+        let supply = 1_000_000 * STROOP;
+
+        let record_1 = Record {
+            balance: 5_000_000_000 * STROOP,
+            weight: 3 * STROOP / 10,
+            scalar: STROOP_SCALAR,
+            index: 0,
+        };
+        let record_2 = Record {
+            balance: 6_000_000_000 * STROOP,
+            weight: 7 * STROOP / 10,
+            scalar: STROOP_SCALAR,
+            index: 0,
+        };
+
+        // deposit
+        // exact 0.000060 LP out -> rounds down
+        let result =
+            calc_lp_token_amount_given_token_deposits_in(&env, &record_1, supply, 1, swap_fee);
+        assert_eq!(result, 0);
+
+        // exact 16666.678333 token in -> rounds up
+        let result =
+            calc_token_deposits_in_given_lp_token_amount(&env, &record_1, supply, 1, swap_fee);
+        assert_eq!(result, 16_667);
+
+        // exact 0.000117 LP out -> rounds down
+        let result =
+            calc_lp_token_amount_given_token_deposits_in(&env, &record_2, supply, 1, swap_fee);
+        assert_eq!(result, 0);
+
+        // exact 8571.431143 token in -> rounds up
+        let result =
+            calc_token_deposits_in_given_lp_token_amount(&env, &record_2, supply, 1, swap_fee);
+        assert_eq!(result, 8_572);
+
+        // withdraw
+        // exact 0.000060 LP in -> rounds up
+        let result = calc_lp_token_amount_given_token_withdrawal_amount(
+            &env, &record_1, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 1);
+
+        // exact 16666.655000 token out -> rounds down
+        let result = calc_token_withdrawal_amount_given_lp_token_amount(
+            &env, &record_1, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 16_666);
+
+        // exact 0.000117 LP in -> rounds up
+        let result = calc_lp_token_amount_given_token_withdrawal_amount(
+            &env, &record_2, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 1);
+
+        // exact 8571.426000 token out -> rounds down
+        let result = calc_token_withdrawal_amount_given_lp_token_amount(
+            &env, &record_2, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 8_571);
+    }
+
+    #[test]
+    fn test_single_sided_rounding_low_token_per_share() {
+        let env = Env::default();
+        let swap_fee = 10;
+        let supply = 1_000_000_000_000 * STROOP;
+
+        let record_1 = Record {
+            balance: 5_000_000_000 * STROOP,
+            weight: 3 * STROOP / 10,
+            scalar: STROOP_SCALAR,
+            index: 0,
+        };
+        let record_2 = Record {
+            balance: 6_000_000_000 * STROOP,
+            weight: 7 * STROOP / 10,
+            scalar: STROOP_SCALAR,
+            index: 0,
+        };
+
+        // At this supply one unit (1e-18) of the pool ratio is worth 10 stroops of LP, so results
+        // land within ~10 stroops of the exact value rather than within 1.
+
+        // deposit
+        // exact 59.999958 LP out -> rounds down
+        let result =
+            calc_lp_token_amount_given_token_deposits_in(&env, &record_1, supply, 1, swap_fee);
+        assert_eq!(result, 50);
+
+        // exact 0.016667 token in -> rounds up
+        let result =
+            calc_token_deposits_in_given_lp_token_amount(&env, &record_1, supply, 1, swap_fee);
+        assert_eq!(result, 1);
+
+        // exact 116.666632 LP out -> rounds down
+        let result =
+            calc_lp_token_amount_given_token_deposits_in(&env, &record_2, supply, 1, swap_fee);
+        assert_eq!(result, 110);
+
+        // exact 0.008571 token in -> rounds up
+        let result =
+            calc_token_deposits_in_given_lp_token_amount(&env, &record_2, supply, 1, swap_fee);
+        assert_eq!(result, 1);
+
+        // withdraw
+        // exact 60.000042 LP in -> rounds up
+        let result = calc_lp_token_amount_given_token_withdrawal_amount(
+            &env, &record_1, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 70);
+
+        // exact 0.016667 token out -> rounds down
+        let result = calc_token_withdrawal_amount_given_lp_token_amount(
+            &env, &record_1, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 0);
+
+        // exact 116.666702 LP in -> rounds up
+        let result = calc_lp_token_amount_given_token_withdrawal_amount(
+            &env, &record_2, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 120);
+
+        // exact 0.008571 token out -> rounds down
+        let result = calc_token_withdrawal_amount_given_lp_token_amount(
+            &env, &record_2, supply, 1, swap_fee,
+        );
+        assert_eq!(result, 0);
+    }
+
+    /// Composing each given-in / given-out pair must return close to the starting amount.
+    ///
+    /// The tolerance is relative (1e-4) plus one unit. Two pool-favoring roundings compound, and
+    /// in the multi-term regime the series adjustment adds up to CPOW_PRECISION of the ratio in
+    /// the pool's favor; on this fixture that peaks near 3e-5 of the trade where the second series
+    /// term is just below CPOW_PRECISION. A doubled or zeroed result fails immediately.
+    #[test]
+    fn test_single_sided_round_trips() {
+        let env = Env::default();
+        let swap_fee = 10;
+        let supply = 1_000_000_000_000 * STROOP;
+
+        let records = [
+            Record {
+                balance: 5_000_000_000 * STROOP,
+                weight: 3 * STROOP / 10,
+                scalar: STROOP_SCALAR,
+                index: 0,
+            },
+            Record {
+                balance: 6_000_000_000 * STROOP,
+                weight: 7 * STROOP / 10,
+                scalar: STROOP_SCALAR,
+                index: 0,
+            },
+        ];
+        // token amounts: 0.01 token up to 2% of the balance
+        let token_amounts: [i128; 8] = [
+            100_000,
+            STROOP,
+            2 * STROOP,
+            10 * STROOP,
+            1_000 * STROOP,
+            100_000 * STROOP,
+            10_000_000 * STROOP,
+            100_000_000 * STROOP,
+        ];
+        // LP amounts: 1 LP up to 1% of the supply
+        let lp_amounts: [i128; 6] = [
+            STROOP,
+            100 * STROOP,
+            10_000 * STROOP,
+            1_000_000 * STROOP,
+            100_000_000 * STROOP,
+            10_000_000_000 * STROOP,
+        ];
+        let within = |actual: i128, expected: i128| -> bool {
+            (actual - expected).abs() <= expected / 10_000 + 1
+        };
+
+        for record in records.iter() {
+            for a in token_amounts {
+                env.cost_estimate().budget().reset_unlimited();
+                // deposit a -> LP, then how much to deposit for that LP: ~a
+                let lp =
+                    calc_lp_token_amount_given_token_deposits_in(&env, record, supply, a, swap_fee);
+                let back = calc_token_deposits_in_given_lp_token_amount(
+                    &env, record, supply, lp, swap_fee,
+                );
+                assert!(
+                    within(back, a),
+                    "deposit round trip: a={a} lp={lp} back={back}"
+                );
+
+                // LP for withdrawing a, then tokens out for that LP: ~a
+                let lp = calc_lp_token_amount_given_token_withdrawal_amount(
+                    &env, record, supply, a, swap_fee,
+                );
+                let back = calc_token_withdrawal_amount_given_lp_token_amount(
+                    &env, record, supply, lp, swap_fee,
+                );
+                assert!(
+                    within(back, a),
+                    "withdraw round trip: a={a} lp={lp} back={back}"
+                );
+            }
+            for p in lp_amounts {
+                env.cost_estimate().budget().reset_unlimited();
+                // tokens to deposit for p LP, then LP for depositing them: ~p
+                let a =
+                    calc_token_deposits_in_given_lp_token_amount(&env, record, supply, p, swap_fee);
+                let back =
+                    calc_lp_token_amount_given_token_deposits_in(&env, record, supply, a, swap_fee);
+                assert!(
+                    within(back, p),
+                    "deposit LP round trip: p={p} a={a} back={back}"
+                );
+
+                // tokens out for burning p LP, then LP to burn for those tokens: ~p
+                let a = calc_token_withdrawal_amount_given_lp_token_amount(
+                    &env, record, supply, p, swap_fee,
+                );
+                let back = calc_lp_token_amount_given_token_withdrawal_amount(
+                    &env, record, supply, a, swap_fee,
+                );
+                assert!(
+                    within(back, p),
+                    "withdraw LP round trip: p={p} a={a} back={back}"
+                );
+            }
+        }
     }
 
     #[test]
