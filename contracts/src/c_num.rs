@@ -32,6 +32,9 @@ pub fn c_pow(e: &Env, base: &I256, exp: &I256, round_up: bool) -> I256 {
     );
 
     let bone = I256::from_i128(e, BONE);
+    if base == &bone {
+        return bone;
+    }
     let int = exp.div(&bone);
     let remain = exp.sub(&int.mul(&bone));
     let whole_pow = c_powi(
@@ -50,10 +53,30 @@ pub fn c_pow(e: &Env, base: &I256, exp: &I256, round_up: bool) -> I256 {
         &I256::from_i128(e, CPOW_PRECISION),
         round_up,
     );
-    if round_up {
+    let result = if round_up {
         whole_pow.fixed_mul_ceil(e, &partial_result, &bone)
     } else {
         whole_pow.fixed_mul_floor(e, &partial_result, &bone)
+    };
+
+    // Account for the final fixed-point unit of approximation uncertainty.
+    let one = I256::from_i32(e, 1);
+    let adjusted = if round_up {
+        result.add(&one)
+    } else if result > one {
+        result.sub(&one)
+    } else {
+        I256::from_i32(e, 0)
+    };
+
+    // A positive exponent preserves which side of one the base lies on. Do not let the
+    // conservative one-unit adjustment cross that exact boundary for near-one inputs.
+    if base > &bone && adjusted < bone {
+        bone
+    } else if base < &bone && adjusted > bone {
+        bone
+    } else {
+        adjusted
     }
 }
 
@@ -114,7 +137,7 @@ fn c_pow_approx(e: &Env, base: &I256, exp: &I256, precision: &I256, round_up: bo
             break;
         }
     }
-    // the series has predicatable approximations bounds, so we can adjust the final sum by
+    // The series has predictable approximation bounds, so we can adjust the final sum by
     // the final term to (almost) ensure the sum is either an under or over estimate based
     // on the rounding direction.
     //
@@ -128,7 +151,7 @@ fn c_pow_approx(e: &Env, base: &I256, exp: &I256, precision: &I256, round_up: bo
                 // the final applied term was additive - the current sum is likely an overestimate
                 sum = sum.sub(&term);
             } else if term < zero && round_up {
-                // the final applied term was subtractive - the current sum is likely an understimate
+                // the final applied term was subtractive - the current sum is likely an underestimate
                 sum = sum.sub(&term);
             }
         } else if !round_up {
