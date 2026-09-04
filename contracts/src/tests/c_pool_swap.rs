@@ -705,11 +705,20 @@ fn test_swap_diff_decimals() {
     let comet = CometPoolContractClient::new(&env, &comet_id);
     let mut balancer = BalancerPool::new(std_vec![1234.0, 12345.0], std_vec![0.20, 0.80], 0.003);
 
+    // The f64 oracle applies each swap with unrounded amounts, so its balances drift from the
+    // contract's by the contract's own rounding after every operation. Resync before each
+    // reference computation so the comparison is against the contract's actual state.
+    let sync = |balancer: &mut BalancerPool| {
+        balancer.balances[0] = comet.get_balance(&token_1) as f64 / scalar_6 as f64;
+        balancer.balances[1] = comet.get_balance(&token_2) as f64 / scalar_9 as f64;
+    };
+
     // 1 (6 dec) in for 2 (9 dec) out
     let amount = 5.0;
 
     // exact in
     let amount_1_in = amount.to_i128(&6);
+    sync(&mut balancer);
     let bal_out = balancer.swap_out_given_in(0, 1, amount).to_i128(&9);
     let (res_out, _) =
         comet.swap_exact_amount_in(&token_1, &amount_1_in, &token_2, &0, &i128::MAX, &user);
@@ -718,6 +727,7 @@ fn test_swap_diff_decimals() {
 
     // exact out
     let amount_2_out = amount.to_i128(&9);
+    sync(&mut balancer);
     let bal_in = balancer.swap_in_given_out(0, 1, amount).to_i128(&6);
     let (res_in, _) = comet.swap_exact_amount_out(
         &token_1,
@@ -734,6 +744,7 @@ fn test_swap_diff_decimals() {
 
     // exact in
     let amount_2_in = amount.to_i128(&9);
+    sync(&mut balancer);
     let bal_out = balancer.swap_out_given_in(1, 0, amount).to_i128(&6);
     let (res_out, _) =
         comet.swap_exact_amount_in(&token_2, &amount_2_in, &token_1, &0, &i128::MAX, &user);
@@ -742,6 +753,7 @@ fn test_swap_diff_decimals() {
 
     // exact out
     let amount_1_out = amount.to_i128(&6);
+    sync(&mut balancer);
     let bal_in = balancer.swap_in_given_out(1, 0, amount).to_i128(&9);
     let (res_in, _) = comet.swap_exact_amount_out(
         &token_2,
@@ -756,4 +768,42 @@ fn test_swap_diff_decimals() {
     println!("diff: {:?}", res_in - bal_in);
     assert!(res_in >= bal_in);
     assert_approx_eq_rel(res_in, bal_in, 0_0001000);
+}
+
+/// Pins the CPU cost of the power series under the default (mainnet) transaction budget. No
+/// `reset_unlimited`: a swap at the `MAX_IN_RATIO` edge (base 0.75, the slowest-converging
+/// reachable input) must fit. Guards `CPOW_PRECISION` changes against the 50-iteration cap and
+/// the budget.
+#[test]
+fn test_worst_case_swap_fits_default_budget() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let token_1 = create_stellar_token(&env, &admin);
+    let token_2 = create_stellar_token(&env, &admin);
+    let token_1_client = MockTokenClient::new(&env, &token_1);
+    let token_2_client = MockTokenClient::new(&env, &token_2);
+    let balances: Vec<i128> = vec![&env, 1_000_000 * STROOP, 1_000_000 * STROOP];
+    let weights: Vec<i128> = vec![&env, 8 * STROOP / 10, 2 * STROOP / 10];
+    token_1_client.mint(&admin, &balances.get_unchecked(0));
+    token_2_client.mint(&admin, &balances.get_unchecked(1));
+    token_1_client.mint(&user, &(1_000_000 * STROOP));
+
+    let comet_id = create_comet_pool(
+        &env,
+        &admin,
+        &vec![&env, token_1.clone(), token_2.clone()],
+        &weights,
+        &balances,
+        0_0030000,
+    );
+    let comet = CometPoolContractClient::new(&env, &comet_id);
+
+    // one third of the token-1 balance: base = 1 / (1 + 1/3) = 0.75
+    let amount_in = balances.get_unchecked(0) / 3;
+    let (amount_out, _) =
+        comet.swap_exact_amount_in(&token_1, &amount_in, &token_2, &0, &i128::MAX, &user);
+    assert!(amount_out > 0);
 }

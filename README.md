@@ -20,6 +20,19 @@ cargo test -- --nocapture
 
 The Rust toolchain and `wasm32v1-none` target are pinned in `rust-toolchain.toml`.
 
+## Math reference values
+
+`scripts/math_reference.py` regenerates the exact-value tables and comments used by the rounding
+tests (`c-pow-grid`, `single-sided`) with Python `decimal`.
+
+## Fuzzing
+
+See [fuzz/README.md](fuzz/README.md).
+
+```sh
+make fuzz FUZZ_TIME=60
+```
+
 ## Create a WASM Release Build
 
 ```sh

@@ -1,0 +1,41 @@
+[package]
+name = "comet-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+# Must match contracts/Cargo.toml — the contract sources are compiled into this crate (see src/lib.rs).
+soroban-sdk = { version = "25.3.2", features = ["testutils"] }
+soroban-token-sdk = "25.3.2"
+soroban-fixed-point-math = "1.5.0"
+
+# Keep this crate out of the root workspace so the contract release profile
+# (panic = "abort", opt-level = "z") does not apply to the fuzzer.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[lib]
+name = "comet_fuzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuzz_deposit_withdraw"
+path = "fuzz_targets/fuzz_deposit_withdraw.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_swap"
+path = "fuzz_targets/fuzz_swap.rs"
+test = false
+doc = false

@@ -19,3 +19,14 @@ build:
 
 clean:
 	cargo clean
+
+FUZZ_TIME ?= 0
+FUZZ_ARGS = -max_total_time=$(FUZZ_TIME) -max_len=128 -len_control=0
+# -s none: the address sanitizer cannot link soroban-env-host's static initializers on macOS.
+fuzz: fuzz-deposit-withdraw
+
+fuzz-deposit-withdraw:
+	cd fuzz && cargo +nightly fuzz run -s none fuzz_deposit_withdraw -- $(FUZZ_ARGS)
+
+fuzz-swap:
+	cd fuzz && cargo +nightly fuzz run -s none fuzz_swap -- $(FUZZ_ARGS)

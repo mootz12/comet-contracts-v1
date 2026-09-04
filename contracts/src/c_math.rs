@@ -352,8 +352,8 @@ mod tests {
         downscale_ceil(&env, &too_large, STROOP_SCALAR);
     }
 
-    // Exact values in the comments below were computed with Python `decimal` at 60 digits from
-    // the closed-form Balancer formulas, using the true 1/w (not the 18-decimal rounded exponent).
+    // Exact values in the comments below come from `scripts/math_reference.py single-sided`
+    // (Python `decimal`, closed-form Balancer formulas, true 1/w rather than the 18-decimal exponent).
     // Every result must land on the pool's side of the exact value:
     //   token in / LP in  -> rounded up   (>= exact)
     //   token out / LP out -> rounded down (<= exact)
