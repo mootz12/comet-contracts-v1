@@ -443,14 +443,14 @@ mod tests {
             index: 0,
         };
 
-        // At this supply one unit (1e-18) of the pool ratio is worth 10 stroops of LP, so results
-        // land within ~10 stroops of the exact value rather than within 1.
+        // At this supply one unit (1e-18) of the pool ratio is worth 10 stroops of LP. The final
+        // conservative c_pow adjustment can therefore move results by another 10 stroops.
 
         // deposit
         // exact 59.999958 LP out -> rounds down
         let result =
             calc_lp_token_amount_given_token_deposits_in(&env, &record_1, supply, 1, swap_fee);
-        assert_eq!(result, 50);
+        assert_eq!(result, 40);
 
         // exact 0.016667 token in -> rounds up
         let result =
@@ -460,7 +460,7 @@ mod tests {
         // exact 116.666632 LP out -> rounds down
         let result =
             calc_lp_token_amount_given_token_deposits_in(&env, &record_2, supply, 1, swap_fee);
-        assert_eq!(result, 110);
+        assert_eq!(result, 100);
 
         // exact 0.008571 token in -> rounds up
         let result =
@@ -472,7 +472,7 @@ mod tests {
         let result = calc_lp_token_amount_given_token_withdrawal_amount(
             &env, &record_1, supply, 1, swap_fee,
         );
-        assert_eq!(result, 70);
+        assert_eq!(result, 80);
 
         // exact 0.016667 token out -> rounds down
         let result = calc_token_withdrawal_amount_given_lp_token_amount(
@@ -484,7 +484,7 @@ mod tests {
         let result = calc_lp_token_amount_given_token_withdrawal_amount(
             &env, &record_2, supply, 1, swap_fee,
         );
-        assert_eq!(result, 120);
+        assert_eq!(result, 130);
 
         // exact 0.008571 token out -> rounds down
         let result = calc_token_withdrawal_amount_given_lp_token_amount(
