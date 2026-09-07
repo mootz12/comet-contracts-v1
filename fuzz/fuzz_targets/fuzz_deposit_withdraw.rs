@@ -11,22 +11,29 @@
 //!    the token balances (rejected if it exceeds A's balance; the pool then stays at init scale).
 //! 4. **User B takes three fuzzed pool actions** — any of the six join / exit / single-sided
 //!    functions with fuzzed amounts — then exits any LP still held so they end flat.
+//! 5. **Close-out swap.** If B's token-2 balance moved, a swap returns it to where it started, so
+//!    the whole sequence nets to "token 1 in, token 1 out" whatever mix of LP paths was used.
 //!
 //! # Properties, checked after every successful operation
 //!
 //! 1. **Accounting is exact** (`Fixture::assert_accounting`).
 //! 2. **Value per LP share never decreases** (`assert_value_per_share_non_decreasing`).
-//! 3. **User B cannot net tokens.** Once B holds no LP: if every action used the same value form
-//!    (all proportional, or all single-sided in one token) B holds no more of either token than
-//!    they started with. Otherwise the sequence is economically a swap, and B cannot have gained
-//!    *both* tokens.
+//! 3. **User B cannot net tokens.** Once B holds no LP:
+//!    - if every action used the same value form (all proportional, or all single-sided in one
+//!      token) B holds no more of either token than they started with, before the close-out;
+//!    - if the close-out brought token 2 back to its starting balance (within tolerance), B holds
+//!      no more token 1 than they started with;
+//!    - always, B cannot have gained *both* tokens.
 //!
 //! Tolerance is `PoolState::tolerance` per successful operation. Contract errors returned through
-//! `try_*` are rejected operations; a raw panic (`WasmVm / InvalidAction`) fails the case.
+//! `try_*` are rejected operations; a raw panic (`WasmVm / InvalidAction`) fails the case. Dust
+//! close-out sells whose output rounds to zero are skipped (see `common::expected_swap_out`).
 
 #![no_main]
 
-use comet_fuzz::common::{outcome, tracing, Amount, Fixture, Stepper, Supply, Token};
+use comet_fuzz::common::{
+    expected_swap_out, outcome, tracing, Amount, Fixture, Stepper, Supply, Token,
+};
 use libfuzzer_sys::fuzz_target;
 use soroban_sdk::testutils::arbitrary::arbitrary::{self, Arbitrary};
 use soroban_sdk::vec;
@@ -176,34 +183,83 @@ fuzz_target!(|input: Input| {
         }
     }
 
-    // Set FUZZ_TRACE=1 to see, per run, how many operations succeeded and in which forms.
-    if tracing() {
-        eprintln!(
-            "trace ops={} forms={forms:?} supply=({}, {}) pool={:?}",
-            s.ops, input.supply_1.0, input.supply_2.0, s.state
+    let flat = f.lp(b) == 0 && s.ops > 0;
+    let lp_ops = s.ops;
+
+    // --- Property 3a: same-form sequences, before the close-out --------------------------------
+    let mid_1 = f.token_balance(&f.token_1, b);
+    let mid_2 = f.token_balance(&f.token_2, b);
+    let same_form = forms.windows(2).all(|w| w[0] == w[1]);
+    if flat && same_form {
+        let tol = s.tol;
+        assert!(
+            mid_1 <= start_1 + tol,
+            "user B netted token 1: start {start_1} end {mid_1} (tol {tol})\n  {input:#?}"
+        );
+        assert!(
+            mid_2 <= start_2 + tol,
+            "user B netted token 2: start {start_2} end {mid_2} (tol {tol})\n  {input:#?}"
         );
     }
 
-    // --- Property 3 --------------------------------------------------------------------------
-    if f.lp(b) == 0 && s.ops > 0 {
+    // --- 5. close-out: bring token 2 back to its starting balance ------------------------------
+    // A mixed sequence (e.g. single-sided in with token 1, out with token 2) is economically a
+    // swap. Swapping the token-2 change back turns it into "token 1 in, token 1 out" so the
+    // token-1 balance alone shows whether B extracted value.
+    let mut closed = flat;
+    if flat && mid_2 > start_2 {
+        let ctx = "user B close-out sell token 2";
+        if expected_swap_out(&f, Token::Two, mid_2 - start_2) == Some(0) {
+            if tracing() {
+                eprintln!("dust_skip {ctx}");
+            }
+            closed = false;
+        } else {
+            let r = f.pool.try_swap_exact_amount_in(
+                &f.token_2,
+                &(mid_2 - start_2),
+                &f.token_1,
+                &0,
+                &i128::MAX,
+                b,
+            );
+            closed = s.step(ctx, outcome(ctx, r));
+        }
+    } else if flat && mid_2 < start_2 {
+        let ctx = "user B close-out buy token 2";
+        let r = f.pool.try_swap_exact_amount_out(
+            &f.token_1,
+            &mid_1,
+            &f.token_2,
+            &(start_2 - mid_2),
+            &i128::MAX,
+            b,
+        );
+        closed = s.step(ctx, outcome(ctx, r));
+    }
+
+    // Set FUZZ_TRACE=1 to see, per run, how many operations succeeded and in which forms.
+    if tracing() {
+        eprintln!(
+            "trace lp_ops={lp_ops} forms={forms:?} closed={closed} supply=({}, {}) pool={:?}",
+            input.supply_1.0, input.supply_2.0, s.state
+        );
+    }
+
+    // --- Property 3b: round trip and both-tokens checks ----------------------------------------
+    if flat {
         let end_1 = f.token_balance(&f.token_1, b);
         let end_2 = f.token_balance(&f.token_2, b);
         let tol = s.tol;
-        let same_form = forms.windows(2).all(|w| w[0] == w[1]);
-        if same_form {
+        if closed && (end_2 - start_2).abs() <= tol {
             assert!(
                 end_1 <= start_1 + tol,
-                "user B netted token 1: start {start_1} end {end_1} (tol {tol})\n  {input:#?}"
-            );
-            assert!(
-                end_2 <= start_2 + tol,
-                "user B netted token 2: start {start_2} end {end_2} (tol {tol})\n  {input:#?}"
-            );
-        } else {
-            assert!(
-                !(end_1 > start_1 + tol && end_2 > start_2 + tol),
-                "user B netted both tokens: start ({start_1}, {start_2}) end ({end_1}, {end_2}) (tol {tol})\n  {input:#?}"
+                "user B netted token 1 after round trip: start {start_1} end {end_1} (tol {tol})\n  {input:#?}"
             );
         }
+        assert!(
+            !(end_1 > start_1 + tol && end_2 > start_2 + tol),
+            "user B netted both tokens: start ({start_1}, {start_2}) end ({end_1}, {end_2}) (tol {tol})\n  {input:#?}"
+        );
     }
 });

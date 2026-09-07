@@ -20,20 +20,17 @@
 //!
 //! # Known issue skipped, not asserted
 //!
-//! `swap_exact_amount_in` divides `amount_in / amount_out` for its price sanity check without a
-//! `token_amount_out > 0` guard, so a dust swap whose output rounds to zero hits a raw
-//! divide-by-zero panic (`WasmVm / InvalidAction`) instead of a typed error. Balancer's `bdiv`
-//! reverts typed there. The target computes the expected output with the contract's own math
-//! first and records such cases as `dust_skip` instead of calling in, so that any *other* raw
-//! panic still fails the case. See REVIEW.md.
+//! Dust `swap_exact_amount_in` calls whose output rounds to zero hit a raw divide-by-zero in the
+//! contract (see `common::expected_swap_out`). The target computes the expected output first and
+//! records such cases as `dust_skip` instead of calling in, so that any *other* raw panic still
+//! fails the case.
 
 #![no_main]
 
-use comet_fuzz::c_consts::{MAX_IN_RATIO, STROOP};
-use comet_fuzz::c_math::calc_token_out_given_token_in;
-use comet_fuzz::common::{outcome, tracing, Amount, Fixture, Stepper, Supply, Token, SWAP_FEE};
+use comet_fuzz::common::{
+    expected_swap_out, outcome, tracing, Amount, Fixture, Stepper, Supply, Token,
+};
 use libfuzzer_sys::fuzz_target;
-use soroban_fixed_point_math::FixedPoint;
 use soroban_sdk::testutils::arbitrary::arbitrary::{self, Arbitrary};
 
 const USER_B_SWAPS: usize = 3;
@@ -57,20 +54,6 @@ struct Input {
     swaps: [Swap; USER_B_SWAPS],
 }
 
-/// Expected output of `swap_exact_amount_in`, computed with the contract's own math, or `None`
-/// when the contract would reject the amount before reaching the math (`MAX_IN_RATIO`).
-fn expected_out(f: &Fixture, token_in: Token, amount_in: i128) -> Option<i128> {
-    let in_rec = f.record(token_in);
-    let out_rec = f.record(token_in.other());
-    let max_in = in_rec.balance.fixed_mul_floor(MAX_IN_RATIO, STROOP)?;
-    if amount_in > max_in {
-        return None;
-    }
-    Some(calc_token_out_given_token_in(
-        &f.env, &in_rec, &out_rec, amount_in, SWAP_FEE,
-    ))
-}
-
 fuzz_target!(|input: Input| {
     let f = Fixture::create(input.supply_1.0, input.supply_2.0);
     let mut s = Stepper::new(&f);
@@ -92,7 +75,7 @@ fuzz_target!(|input: Input| {
                 token_in,
                 amount_in,
             } => {
-                if expected_out(&f, token_in, amount_in.0) == Some(0) {
+                if expected_swap_out(&f, token_in, amount_in.0) == Some(0) {
                     dust_skip += 1;
                     if tracing() {
                         eprintln!("dust_skip {ctx}");

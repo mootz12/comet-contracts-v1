@@ -1,10 +1,12 @@
 //! Shared fixture and property checks for the fuzz targets.
 
-use crate::c_consts::{MIN_FEE, STROOP_SCALAR};
+use crate::c_consts::{MAX_IN_RATIO, MIN_FEE, STROOP, STROOP_SCALAR};
+use crate::c_math::calc_token_out_given_token_in;
 use crate::c_pool::comet::{CometPoolContract, CometPoolContractClient};
 use crate::c_pool::storage_types::Record;
 use num_bigint::BigInt;
 use num_traits::Zero;
+use soroban_fixed_point_math::FixedPoint;
 use soroban_sdk::testutils::arbitrary::arbitrary::{self, Arbitrary, Unstructured};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::token::{StellarAssetClient, TokenClient};
@@ -240,16 +242,20 @@ impl PoolState {
 
 /// Property: value per LP share did not decrease. With normalized weights 0.8 / 0.2 the invariant
 /// per share `b1^0.8 · b2^0.2 / S` is compared exactly by raising both sides to the fifth power:
-/// `(b1' + t)^4 · (b2' + t) · S^5  >=  b1^4 · b2 · (S' - t)^5`, `t` = tolerance.
+/// `(b1' + t)^4 · (b2' + t) · S^5  >=  b1^4 · b2 · S'^5`, `t` = tolerance.
+///
+/// The tolerance applies to the token balances only. Every LP mint rounds down and every LP burn
+/// rounds up, so rounding can only raise value per share through the supply; the supply is
+/// compared exactly. (Subtracting `t` from the supply gave a relative slack of `5t / S`, which
+/// at `S ~ 1e9` LP stroops accepted a loss of ~1e-9 of the balances per operation.)
 pub fn assert_value_per_share_non_decreasing(before: &PoolState, after: &PoolState, ctx: &str) {
     let t = before.tolerance().max(after.tolerance());
     let b1 = BigInt::from(after.b1 + t);
     let b2 = BigInt::from(after.b2 + t);
-    let s_after = BigInt::from(after.supply - t);
+    let s_after = BigInt::from(after.supply);
     assert!(
         s_after > BigInt::zero(),
-        "{ctx}: LP supply {} collapsed below tolerance {t}",
-        after.supply
+        "{ctx}: LP supply collapsed to zero"
     );
     let lhs = b1.pow(4) * b2 * BigInt::from(before.supply).pow(5);
     let rhs = BigInt::from(before.b1).pow(4) * BigInt::from(before.b2) * s_after.pow(5);
@@ -257,6 +263,25 @@ pub fn assert_value_per_share_non_decreasing(before: &PoolState, after: &PoolSta
         lhs >= rhs,
         "{ctx}: value per LP share decreased (tolerance {t})\n  before: {before:?}\n  after:  {after:?}"
     );
+}
+
+/// Expected output of `swap_exact_amount_in`, computed with the contract's own math, or `None`
+/// when the contract would reject the amount before reaching the math (`MAX_IN_RATIO`).
+///
+/// Used to route around a known raw panic: `swap_exact_amount_in` divides `amount_in /
+/// amount_out` for its price sanity check without a `token_amount_out > 0` guard, so a dust swap
+/// whose output rounds to zero hits a divide-by-zero (`WasmVm / InvalidAction`) instead of a
+/// typed error. See REVIEW.md 1.9.
+pub fn expected_swap_out(f: &Fixture, token_in: Token, amount_in: i128) -> Option<i128> {
+    let in_rec = f.record(token_in);
+    let out_rec = f.record(token_in.other());
+    let max_in = in_rec.balance.fixed_mul_floor(MAX_IN_RATIO, STROOP)?;
+    if amount_in > max_in {
+        return None;
+    }
+    Some(calc_token_out_given_token_in(
+        &f.env, &in_rec, &out_rec, amount_in, SWAP_FEE,
+    ))
 }
 
 // ---------------------------------------------------------------------------------------------

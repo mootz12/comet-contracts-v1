@@ -67,10 +67,13 @@ manifest untouched and gives native speed with real panic messages. The `soroban
 
 | Target | Scenario | Properties |
 |---|---|---|
-| `fuzz_deposit_withdraw` | User B takes three fuzzed join / exit / single-sided actions, then exits flat (dust swept through the single-sided path). | Accounting exact; value per LP share non-decreasing; once B holds no LP, if every action used the same value form B holds no more of either token than they started with, otherwise B cannot have gained both. |
+| `fuzz_deposit_withdraw` | User B takes three fuzzed join / exit / single-sided actions, exits flat (dust swept through the single-sided path), then a close-out swap returns token 2 to its starting balance. | Accounting exact; value per LP share non-decreasing; once B holds no LP: if every action used the same value form B holds no more of either token than they started with; if the close-out succeeded B holds no more token 1 than they started with; B cannot have gained both. |
 | `fuzz_swap` | User B makes three fuzzed swaps (exact-in or exact-out, either direction), then a close-out swap returns token 2 to its starting balance. | Accounting exact; invariant `b1^0.8 · b2^0.2` non-decreasing with LP supply constant; if the close-out succeeded B holds no more token 1 than they started with; B cannot have gained both. Dust `swap_exact_amount_in` calls whose output rounds to zero are skipped and counted (`dust_skip`) because the contract hits a raw divide-by-zero there — see REVIEW.md 1.9. |
 
 Both share the fixture: an 80/20 pool at the minimum swap fee over two Stellar Asset Contracts
 with fuzzed supplies up to `i64::MAX / 2`, split 20% pool / 30% user A / 50% user B, with user A
 joining for a fuzzed LP amount first. Tolerance is one unit per 1e18 of the largest pool quantity
-per operation, for the sub-unit `c_pow` residual documented in `MATH_FIXES.md` §4.4.
+per operation, for the sub-unit `c_pow` residual documented in `MATH_FIXES.md` §4.4. It applies to
+token balances only; the LP supply is compared exactly, since LP mints round down and burns round
+up. Both targets skip dust `swap_exact_amount_in` calls whose output rounds to zero, which hit a raw
+divide-by-zero in the contract (`common::expected_swap_out`, REVIEW.md 1.9).
