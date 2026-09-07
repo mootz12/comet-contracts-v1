@@ -4,7 +4,9 @@ use core::assert_eq;
 
 use sep_41_token::testutils::MockTokenClient;
 use soroban_sdk::{
-    Address, Env, Event, Vec, contractevent, testutils::{Address as _, Events as _}, vec,
+    contractevent,
+    testutils::{Address as _, Events as _},
+    vec, Address, Env, Event, Vec,
 };
 
 use crate::{
@@ -32,7 +34,7 @@ fn assert_last_mint_event(e: &Env, pool: &Address, to: &Address, amount: i128) {
             to: to.clone(),
             amount: amount,
         }
-        .to_xdr(e, pool), 
+        .to_xdr(e, pool),
         *xdr_event
     );
 }

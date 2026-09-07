@@ -318,3 +318,47 @@ fn test_c_pow_bounds_against_exact() {
         );
     }
 }
+
+#[test]
+fn test_c_pow_first_term_convergence_rounds_toward_bound() {
+    let env = Env::default();
+    let quarter = I256::from_i128(&env, BONE / 4);
+
+    // ceiling: series gives exactly BONE (term floors to 0) - one unit too low
+    let base = I256::from_i128(&env, BONE + 1);
+    assert_eq!(
+        c_pow(&env, &base, &quarter, true).to_i128().unwrap(),
+        BONE + 1
+    );
+    assert_eq!(c_pow(&env, &base, &quarter, false).to_i128().unwrap(), BONE);
+
+    // floor: series gives BONE - 1e8 exactly - one unit too high
+    let base = I256::from_i128(&env, BONE - 400_000_000);
+    assert_eq!(
+        c_pow(&env, &base, &quarter, false).to_i128().unwrap(),
+        BONE - 100_000_001
+    );
+    // ceiling of the same input is BONE - 1e8; the nudge makes it a valid (1-unit loose) bound
+    assert_eq!(
+        c_pow(&env, &base, &quarter, true).to_i128().unwrap(),
+        BONE - 100_000_000 + 1
+    );
+
+    let base = I256::from_i128(&env, BONE + 2);
+    let exp = I256::from_i128(&env, 4 * BONE / 5);
+    assert_eq!(c_pow(&env, &base, &exp, false).to_i128().unwrap(), BONE);
+}
+
+#[test]
+fn test_c_pow_base_one_is_exact() {
+    let env = Env::default();
+    let base = I256::from_i128(&env, BONE);
+    let exp = I256::from_i128(&env, BONE * 5 / 4);
+
+    assert_eq!(c_pow(&env, &base, &exp, true).to_i128().unwrap(), BONE);
+    assert_eq!(c_pow(&env, &base, &exp, false).to_i128().unwrap(), BONE);
+
+    // and the neighbouring ratio BONE - 1 must stay at or below BONE when rounding up
+    let base = I256::from_i128(&env, BONE - 1);
+    assert_eq!(c_pow(&env, &base, &exp, true).to_i128().unwrap(), BONE - 1);
+}

@@ -117,11 +117,24 @@ fn c_pow_approx(e: &Env, base: &I256, exp: &I256, precision: &I256, round_up: bo
     // the series has predicatable approximations bounds, so we can adjust the final sum by
     // the final term to (almost) ensure the sum is either an under or over estimate based
     // on the rounding direction.
-    //
-    // Skip the adjustment if the series converged on the first term. In that case the final
-    // term is the entire first-order correction rather than a tail estimate, and the omitted
-    // tail is below one unit, so adjusting would double (or zero) the result.
-    if iters > 1 {
+    if iters == 1 {
+        // The series converged on the first term, so that term is the entire first-order
+        // correction rather than a tail estimate, and the omitted tail is below one unit.
+        // Adjusting by the term would double (or zero) the result. However, the term itself
+        // was floored, so the sum can still sit one unit on the wrong side of the true value.
+        // Move it one unit in the requested direction. This costs at most one unit of
+        // precision (1e-18 of the ratio) when the sum was already on the correct side.
+        //
+        // Never adjust across BONE.
+        if x != zero {
+            let one = I256::from_i32(e, 1);
+            if round_up {
+                sum = sum.add(&one);
+            } else if term != zero {
+                sum = sum.sub(&one);
+            }
+        }
+    } else {
         if x > zero {
             // series will oscillate due to negative `c` values and a starting positive value.
             if term > zero && !round_up {
