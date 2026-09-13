@@ -7,7 +7,7 @@ use crate::c_pool::{
         init::execute_init,
         pool::{
             execute_dep_lp_tokn_amt_out_get_tokn_in, execute_dep_tokn_amt_in_get_lp_tokns_out,
-            execute_exit_pool, execute_gulp, execute_join_pool, execute_swap_exact_amount_in,
+            execute_exit_pool, execute_join_pool, execute_swap_exact_amount_in,
             execute_swap_exact_amount_out, execute_wdr_tokn_amt_in_get_lp_tokns_out,
             execute_wdr_tokn_amt_out_get_lp_tokns_in,
         },
